@@ -183,7 +183,7 @@
   .timer-controls{display:flex;gap:12px;width:100%;align-items:stretch}
   .btn-ctrl{flex:1;height:72px;border:none;border-radius:var(--radius2);font-family:inherit;font-size:16px;font-weight:700;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 4px 12px rgba(0,0,0,0.12)}
   .btn-ctrl:active{transform:scale(0.96)}
-  .btn-start{background:var(--green);color:#fff;font-size:20px;height:120px;box-shadow:0 6px 20px rgba(46,158,88,0.35)} .btn-start:hover{background:#267a45}
+  .btn-start{background:var(--green);color:#fff;font-size:24px;height:140px;box-shadow:0 6px 20px rgba(46,158,88,0.35);font-weight:800} .btn-start:hover{background:#267a45}
   .btn-pause{background:rgba(192,122,26,0.12);color:var(--orange);border:1px solid rgba(192,122,26,0.3);font-size:17px} .btn-pause:hover{background:rgba(192,122,26,0.2)}
   .btn-reset{flex:0 0 72px;height:72px;background:var(--silver-light);color:var(--navy)} .btn-reset:hover{background:var(--silver)}
   .tap-wrap{width:100%}
@@ -311,9 +311,12 @@
   .hidden{display:none!important} .spacer{height:16px}
 
   @media(max-width:640px){
-    header{padding:0 16px} main{padding:20px 16px 48px}
-    .header-meet{display:none} #timer-display{font-size:52px}
+    header{padding:0 16px;height:56px} main{padding:20px 16px 48px}
+    .header-meet{width:100% !important;max-width:100%;margin:0 8px}
+    .header-meet input{width:160px !important;font-size:14px}
+    #timer-display{font-size:52px}
     .qr-panel{flex-direction:column}
+    .btn-start{height:110px;font-size:22px}
   }
 </style>
 </head>
@@ -634,6 +637,11 @@
       <div><div class="setting-label">Sound on tap</div><div class="setting-sub">Subtle confirmation tone</div></div>
       <label class="toggle"><input type="checkbox" id="sound-toggle" checked onchange="updateSettings()"><span class="toggle-slider"></span></label>
     </div>
+    <div class="setting-row">
+      <div><div class="setting-label">Gun sensitivity</div><div class="setting-sub">Lower = more sensitive (0.15–0.40)</div></div>
+      <input type="range" id="gun-sens" min="0.15" max="0.40" step="0.01" style="width:120px" onchange="updateGunSensitivity()">
+      <span id="gun-sens-val" style="font-size:12px;font-weight:600;color:var(--text3);min-width:40px;text-align:right">0.28</span>
+    </div>
     <div class="setting-row" style="border:none;padding-bottom:0;">
       <div><div class="setting-label" style="font-size:13px;color:var(--text3);">Keyboard shortcuts</div><div class="setting-sub" style="margin-top:6px;line-height:1.8;"><kbd>T</kbd> Tap finish &nbsp;<kbd>S</kbd> Start/Stop &nbsp;<kbd>Esc</kbd> Close</div></div>
     </div>
@@ -889,15 +897,15 @@ thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-tr
 function getOrCreateSpectatorUrl() {
   const html = generateSpectatorHTML();
   if (!html) return null;
-  if (spectatorBlobUrl) URL.revokeObjectURL(spectatorBlobUrl);
-  spectatorBlobUrl = URL.createObjectURL(new Blob([html], {type:'text/html'}));
-  return spectatorBlobUrl;
+  // Reliable data URL (works on Vercel and all modern browsers)
+  const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+  return dataUrl;
 }
 
 function openSpectatorPage() {
   const url = getOrCreateSpectatorUrl();
   if (!url) { showToast('ℹ️','No results to share yet'); return; }
-  window.open(url, '_blank');
+  window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function downloadQR() {
@@ -926,15 +934,16 @@ function refreshQRCode() {
     return;
   }
   if (typeof QRCode === 'undefined') {
-    container.innerHTML = '<div style="width:150px;height:150px;display:flex;align-items:center;justify-content:center;color:#8a9ab5;font-size:11px;text-align:center;padding:10px;line-height:1.6;">Use "Open Results Page"<br>to share results</div>';
-    setTimeout(() => { if (typeof QRCode !== 'undefined') refreshQRCode(); }, 1200);
+    container.innerHTML = '<div style="width:150px;height:150px;display:flex;align-items:center;justify-content:center;color:#8a9ab5;font-size:11px;text-align:center;padding:10px;line-height:1.6;">Loading QR library...</div>';
+    setTimeout(() => { if (typeof QRCode !== 'undefined') refreshQRCode(); }, 800);
     return;
   }
   try {
-    const offscreen = document.createElement('div');
-    offscreen.style.cssText = 'position:fixed;left:-9999px;top:-9999px;visibility:hidden;';
-    document.body.appendChild(offscreen);
-    new QRCode(offscreen, {
+    // Clear previous
+    while (container.firstChild) container.removeChild(container.firstChild);
+    
+    // Create fresh QR directly in container (more reliable)
+    new QRCode(container, {
       text: url,
       width: 150,
       height: 150,
@@ -942,22 +951,19 @@ function refreshQRCode() {
       colorLight: '#ffffff',
       correctLevel: QRCode.CorrectLevel.M
     });
+    
+    // Style the canvas after creation
     setTimeout(() => {
-      const canvas = offscreen.querySelector('canvas');
-      document.body.removeChild(offscreen);
-      while (container.firstChild) container.removeChild(container.firstChild);
+      const canvas = container.querySelector('canvas');
       if (canvas) {
         canvas.style.display = 'block';
         canvas.style.borderRadius = '4px';
-        container.appendChild(canvas);
-      } else {
-        container.innerHTML = '<div style="width:150px;height:150px;display:flex;align-items:center;justify-content:center;color:#8a9ab5;font-size:11px;text-align:center;padding:10px;line-height:1.5;">Use "Open Results Page"<br>to share</div>';
       }
       const heatCount = Object.keys(results).length;
-      if (statusEl) statusEl.textContent = `Live · ${heatCount} heat${heatCount !== 1 ? 's' : ''} recorded — scan to view on any device`;
-    }, 100);
+      if (statusEl) statusEl.textContent = `Live · ${heatCount} heat${heatCount !== 1 ? 's' : ''} recorded`;
+    }, 50);
   } catch(e) {
-    container.innerHTML = '<div style="width:150px;height:150px;display:flex;align-items:center;justify-content:center;color:#8a9ab5;font-size:11px;text-align:center;padding:10px;">Use "Open Results Page"<br>to share</div>';
+    container.innerHTML = '<div style="width:150px;height:150px;display:flex;align-items:center;justify-content:center;color:#8a9ab5;font-size:11px;text-align:center;padding:10px;">QR generation failed<br>Use "Open Results Page"</div>';
     if (statusEl) statusEl.textContent = 'Use "Open Results Page" to share';
   }
 }
@@ -987,7 +993,7 @@ function buildFilterTabs(heats){
 // ════════════════════════════════════════════
 let athletes=[], results={}, currentHeat=null, currentAthletes=[], recordedFinishes=[];
 let isRunning=false, startTime=0, pausedTime=0, timerInterval=null;
-let settings={autoAssign:true,sound:true};
+let settings={autoAssign:true,sound:true,gunSensitivity:0.28};
 let collapsedGroups={}, athletesTableCollapsed=false;
 
 // ════════════════════════════════════════════
@@ -1241,7 +1247,8 @@ function loopGun() {
   const rms = Math.sqrt(sum/data.length);
   const fill = document.getElementById('gun-vol-fill');
   if (fill) fill.style.width = Math.min(rms*400,100)+'%';
-  if (!gunCooldown && rms > 0.28) {
+  const sens = settings.gunSensitivity || 0.28;
+  if (!gunCooldown && rms > sens) {
     gunCooldown = true;
     stopGunListen();
     startTimer();
@@ -1548,9 +1555,26 @@ function exportAllResults(){if(!Object.keys(results).length){showToast('ℹ️',
 function saveProject(){const data={athletes,results,meetName:document.getElementById('meet-name').value.trim(),settings,version:'1.0'};const json=JSON.stringify(data,null,2);const blob=new Blob([json],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;const meet=document.getElementById('meet-name').value.trim().replace(/[^a-z0-9]/gi,'_');a.download=`tracktap_${meet||'project'}_${new Date().toISOString().slice(0,10)}.json`;document.body.appendChild(a);a.click();document.body.removeChild(a);URL.revokeObjectURL(url);navigator.clipboard.writeText(json).then(()=>showToast('✓','Saved + copied to clipboard')).catch(()=>showToast('✓','Project saved to file'));}
 function loadProject(e){const file=e.target.files[0];if(!file)return;const reader=new FileReader();reader.onload=function(ev){try{const data=JSON.parse(ev.target.result);if(data.athletes&&Array.isArray(data.athletes))athletes=data.athletes;if(data.results&&typeof data.results==='object')results=data.results;if(data.settings)settings={...settings,...data.settings};if(data.meetName){document.getElementById('meet-name').value=data.meetName;localStorage.setItem('tt_meet',data.meetName);}saveToStorage();renderAthletesTable();renderHeatsGrid();renderResults();pushState();showToast('✓',`Project loaded: ${athletes.length} athletes`);}catch(err){showToast('⚠️','Invalid project file');}};reader.readAsText(file);e.target.value='';}
 
-function showSettings(){document.getElementById('settings-modal').classList.add('open');document.getElementById('auto-assign-toggle').checked=settings.autoAssign;document.getElementById('sound-toggle').checked=settings.sound;}
+function showSettings(){
+  document.getElementById('settings-modal').classList.add('open');
+  document.getElementById('auto-assign-toggle').checked=settings.autoAssign;
+  document.getElementById('sound-toggle').checked=settings.sound;
+  const sens = settings.gunSensitivity || 0.28;
+  const range = document.getElementById('gun-sens');
+  if(range){
+    range.value = sens;
+    document.getElementById('gun-sens-val').textContent = sens.toFixed(2);
+  }
+}
 function hideSettings(){document.getElementById('settings-modal').classList.remove('open');}
 function updateSettings(){settings.autoAssign=document.getElementById('auto-assign-toggle').checked;settings.sound=document.getElementById('sound-toggle').checked;saveToStorage();}
+
+function updateGunSensitivity(){
+  const val = parseFloat(document.getElementById('gun-sens').value);
+  settings.gunSensitivity = val;
+  document.getElementById('gun-sens-val').textContent = val.toFixed(2);
+  saveToStorage();
+}
 function showWalkOnModal(){if(!currentHeat)return;document.getElementById('walkon-heat-label').textContent=`Adding to: ${currentHeat}`;['wo-name','wo-lane','wo-team','wo-grade'].forEach(id=>document.getElementById(id).value='');document.getElementById('walkon-modal').classList.add('open');setTimeout(()=>document.getElementById('wo-name').focus(),120);}
 function hideWalkOnModal(){document.getElementById('walkon-modal').classList.remove('open');}
 function addWalkOn(){const name=document.getElementById('wo-name').value.trim();if(!name){document.getElementById('wo-name').focus();return;}const lane=parseInt(document.getElementById('wo-lane').value)||99;const team=document.getElementById('wo-team').value.trim()||'Unattached';const grade=document.getElementById('wo-grade').value.trim()||'';const gender=currentHeat.includes('Boys')?'Boys':currentHeat.includes('Girls')?'Girls':'';const newAth={id:'wo-'+Date.now().toString(36),heat:currentHeat,lane,name,team,grade,gender,walkOn:true};athletes.push(newAth);currentAthletes.push(newAth);currentAthletes.sort((a,b)=>a.lane-b.lane);saveToStorage();renderAthletesTable();renderHeatsGrid();renderAthletesList();updateAssignedCount();hideWalkOnModal();pushState();showToast('🏃',`${name} added as walk-on`);}
