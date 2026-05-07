@@ -417,7 +417,10 @@
   <div id="timer-section" class="hidden">
     <div class="timer-header">
       <div>
-        <div class="timer-heat-name" id="heat-title"></div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="timer-heat-name" id="heat-title"></div>
+          <span id="race-number-badge" style="font-size:11px;font-weight:700;color:#7a5a10;background:rgba(201,168,76,0.18);padding:3px 8px;border-radius:8px;display:none;"></span>
+        </div>
         <div class="timer-heat-sub">
           <span id="assigned-count"></span>
           <span style="color:var(--text4);margin:0 6px;">·</span>
@@ -467,6 +470,14 @@
           <span class="gun-dot" id="gun-dot"></span>
         </button>
         <div id="gun-status" class="gun-status hidden"></div>
+
+        <!-- Quick Gun Sensitivity (visible in timer) -->
+        <div style="width:100%;margin-top:6px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--text3)">
+          <span style="flex-shrink:0">Sensitivity</span>
+          <input type="range" id="gun-sens-quick" min="0.15" max="0.40" step="0.01" style="flex:1" 
+                 oninput="updateGunSensitivityQuick(this.value)">
+          <span id="gun-sens-quick-val" style="font-weight:600;min-width:32px;text-align:right">0.28</span>
+        </div>
 
         <div class="tap-wrap">
           <button class="tap-btn" id="tap-btn" onclick="tapFinish(event)">
@@ -666,8 +677,15 @@ var pollInterval = null;
 function getEventClass(h){const s=(h||'').toLowerCase();if(/\brelay\b/.test(s))return'ev-relay';if(/hurdle/.test(s))return'ev-hurdle';if(/\b(55m|60m|100m|200m|dash)\b/.test(s))return'ev-sprint';if(/\b(300m|400m|800m)\b/.test(s))return'ev-mid';if(/\b(1500m|1600m|mile|3000m|3200m|5000m|10000m)\b|cross/.test(s))return'ev-long';if(/jump|vault|throw|shot|discus|javelin|hammer|pole/.test(s))return'ev-field';return'ev-other';}
 function getGenderClass(h){const s=(h||'').toLowerCase();if(/\b(boys|male|men)\b/.test(s))return'g-boys';if(/\b(girls|female|women)\b/.test(s))return'g-girls';if(/mixed/.test(s))return'g-mixed';return'g-unknown';}
 function getEventLabel(h){const s=(h||'').toLowerCase();if(/\brelay\b/.test(s))return'Relay';if(/hurdle/.test(s))return'Hurdles';const m=s.match(/\b(\d+m)\b/);if(m)return m[1].toUpperCase();if(/mile/.test(s))return'Mile';if(/cross/.test(s))return'XC';if(/shot/.test(s))return'Shot Put';if(/discus/.test(s))return'Discus';if(/javelin/.test(s))return'Javelin';if(/hammer/.test(s))return'Hammer';if(/pole/.test(s))return'Pole Vault';if(/high jump/.test(s))return'High Jump';if(/long jump/.test(s))return'Long Jump';if(/triple/.test(s))return'Triple Jump';return'';}
-function gradeTag(h,g){const m=(h||'').match(/grade\s*(\d+)/i);const gr=m?m[1]:(g&&g.length===1?g[0]:null);if(!gr)return'';const map={'9':['htag-fr','Fr'],'10':['htag-so','So'],'11':['htag-jr','Jr'],'12':['htag-sr','Sr']};const[cls,label]=map[gr]||['htag-gr','Gr'+gr];return`<span class="htag ${cls}">${label}</span>`;}
-function genderTag(h){const s=(h||'').toLowerCase();if(/\b(boys|male)\b/.test(s))return`<span class="htag htag-boys">Boys</span>`;if(/\b(girls|female)\b/.test(s))return`<span class="htag htag-girls">Girls</span>`;if(/mixed/.test(s))return`<span class="htag htag-mixed">Mixed</span>`;return'';}
+function gradeGenderTag(h, g) {
+  const m = (h || '').match(/grade\s*(\d+)/i);
+  const gr = m ? m[1] : (g && g.length === 1 ? g[0] : null);
+  if (!gr) return '';
+  const s = (h || '').toLowerCase();
+  const gender = s.includes('boys') || s.includes('male') ? 'B' : 
+                 s.includes('girls') || s.includes('female') ? 'G' : '';
+  return `<span class="htag htag-gr">${gr}${gender}</span>`;
+}
 
 const EV_ORDER={'ev-sprint':0,'ev-hurdle':1,'ev-relay':2,'ev-mid':3,'ev-long':4,'ev-field':5,'ev-other':6};
 function evDistKey(h){const s=(h||'').toLowerCase();const seqs=['55m','60m','100m','200m','300m','400m','800m','1500m','1600m','mile','3000m','3200m','5000m','10000m','hurdle','relay','shot','discus','javelin','hammer','pole','high jump','long jump','triple'];for(let i=0;i<seqs.length;i++)if(s.includes(seqs[i]))return i;return 99;}
@@ -897,9 +915,10 @@ thead th{padding:9px 12px;text-align:left;font-size:10px;font-weight:700;text-tr
 function getOrCreateSpectatorUrl() {
   const html = generateSpectatorHTML();
   if (!html) return null;
-  // Reliable data URL (works on Vercel and all modern browsers)
-  const dataUrl = 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
-  return dataUrl;
+  // Use blob URL — most reliable across all environments (including Vercel)
+  if (spectatorBlobUrl) URL.revokeObjectURL(spectatorBlobUrl);
+  spectatorBlobUrl = URL.createObjectURL(new Blob([html], {type: 'text/html'}));
+  return spectatorBlobUrl;
 }
 
 function openSpectatorPage() {
@@ -991,7 +1010,7 @@ function buildFilterTabs(heats){
 // ════════════════════════════════════════════
 // STATE (from first site + sync additions)
 // ════════════════════════════════════════════
-let athletes=[], results={}, currentHeat=null, currentAthletes=[], recordedFinishes=[];
+let athletes=[], results={}, currentHeat=null, currentAthletes=[], recordedFinishes=[], otherDivisionAthletes=[];
 let isRunning=false, startTime=0, pausedTime=0, timerInterval=null;
 let settings={autoAssign:true,sound:true,gunSensitivity:0.28};
 let collapsedGroups={}, athletesTableCollapsed=false;
@@ -1313,6 +1332,33 @@ function renderAthletesList(){
     html+=`</div>`;
   });
   container.innerHTML=html;
+
+  // Add "Other athletes in this division" section
+  if (otherDivisionAthletes && otherDivisionAthletes.length > 0) {
+    const otherDiv = document.createElement('div');
+    otherDiv.style.marginTop = '12px';
+    otherDiv.innerHTML = `
+      <div class="group-header" style="background:rgba(201,168,76,0.08);cursor:default;">
+        <div class="group-header-left">
+          <span class="group-label" style="color:#7a5a10;">Other athletes in this division</span>
+          <span class="group-count">${otherDivisionAthletes.length}</span>
+        </div>
+      </div>
+      <div style="max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:8px;">
+        ${otherDivisionAthletes.map(ath => `
+          <div class="athlete-item" style="border-bottom:1px solid var(--border2);" onclick="addAthleteToCurrentHeat('${ath.id}')">
+            <div class="ath-lane">${ath.lane}</div>
+            <div class="ath-info">
+              <div class="ath-name">${ath.name}</div>
+              <div class="ath-team">${ath.team} · ${ath.heat}</div>
+            </div>
+            <span style="font-size:9px;font-weight:700;padding:2px 6px;border-radius:8px;background:rgba(201,168,76,0.15);color:#7a5a10;flex-shrink:0;">ADD</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    container.appendChild(otherDiv);
+  }
 }
 
 function renderFinishesList(){
@@ -1340,7 +1386,18 @@ function renderHeatsGrid(){
   if(!allHeats.length){sec.innerHTML=`<div class="card" style="padding:36px;text-align:center;border-style:dashed;"><div class="empty-icon">📋</div><div class="empty-sub">No heats yet — upload a CSV or add athletes manually</div></div>`;document.getElementById('event-filter-bar').innerHTML=`<button class="filter-tab active" onclick="setEventFilter('all',this)">All Events</button>`;return;}
   buildFilterTabs(allHeats);
   const filtered=activeEventFilter==='all'?allHeats:allHeats.filter(h=>getEventFilterKey(h)===activeEventFilter);
-  const sorted=sortHeats(filtered);
+  // Sort by Race Number if available, otherwise use default sort
+  let sorted = filtered;
+  const hasRaceNumbers = athletes.some(a => a.raceNumber);
+  if (hasRaceNumbers) {
+    sorted = [...filtered].sort((a, b) => {
+      const ra = athletes.find(x => x.heat === a)?.raceNumber || 999;
+      const rb = athletes.find(x => x.heat === b)?.raceNumber || 999;
+      return ra - rb;
+    });
+  } else {
+    sorted = sortHeats(filtered);
+  }
   if(!sorted.length){sec.innerHTML=`<div class="card" style="padding:28px;text-align:center;"><div class="empty-sub">No heats match this filter</div></div>`;return;}
   const groups=[];let lastEv=null;sorted.forEach(heat=>{const ev=getEventClass(heat);if(ev!==lastEv){groups.push({evClass:ev,label:EV_GROUP_NAMES[ev]||'Other',heats:[]});lastEv=ev;}groups[groups.length-1].heats.push(heat);});
   sec.innerHTML=groups.map(group=>`
@@ -1360,13 +1417,14 @@ function renderHeatsGrid(){
         const safeHeat=heat.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
         let tagsHtml = '';
         if (isRaceGroup && (uniqueGenders.length > 1 || uniqueGrades.length > 1)) {
-          const divSummary = [...new Set(hAthletes.map(a => [a.gender, a.grade ? `Gr.${a.grade}` : ''].filter(Boolean).join(' ')))].slice(0,3).map(d=>`<span class="htag htag-gr" style="font-size:9px;">${d}</span>`).join('');
-          tagsHtml = divSummary + `<span class="heat-count-text">${count} athlete${count!==1?'s':''}</span>`;
+          tagsHtml = `<span class="heat-count-text" style="font-size:12px;">${count} athlete${count!==1?'s':''}</span>`;
         } else {
-          tagsHtml = `${genderTag(heat)}${gradeTag(heat,grades)}<span class="heat-count-text">${count} athlete${count!==1?'s':''}</span>`;
+          tagsHtml = `<span class="heat-count-text" style="font-size:12px;">${count} athlete${count!==1?'s':''}</span>`;
         }
         const rgBadge = isRaceGroup ? `<div class="event-label" style="color:#4a3a8a;">Mixed Race</div>` : (evLabel ? `<div class="event-label">${evLabel}</div>` : '');
-        return `<div class="heat-card ${evClass} ${gClass}" onclick="loadHeat('${safeHeat}')"><div class="gender-bar"></div><div class="heat-card-body">${rgBadge}<div class="heat-name">${heat}</div><div class="heat-footer"><div class="heat-tags">${tagsHtml}</div><div style="display:flex;gap:5px;align-items:center;">${done ? `<span class="heat-chip chip-done">Done</span><button onclick="event.stopPropagation();editHeat('${safeHeat}')" style="height:22px;padding:0 8px;background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.4);border-radius:20px;font-family:inherit;font-size:10px;font-weight:700;color:#7a5a10;cursor:pointer;" title="Edit results">✏️</button>` : `<span class="heat-chip chip-start">Start</span>`}</div></div></div></div>`;
+        const firstRaceNum = hAthletes.find(a => a.raceNumber)?.raceNumber;
+        const raceNumBadge = firstRaceNum ? `<span style="font-size:13px;font-weight:800;color:#7a5a10;background:rgba(201,168,76,0.2);padding:2px 8px;border-radius:8px;">Race #${firstRaceNum}</span>` : '';
+        return `<div class="heat-card ${evClass} ${gClass}" onclick="loadHeat('${safeHeat}')"><div class="gender-bar"></div><div class="heat-card-body">${rgBadge}${raceNumBadge ? `<div style="margin-bottom:4px;">${raceNumBadge}</div>` : ''}<div class="heat-name">${heat}</div><div class="heat-footer"><div class="heat-tags">${tagsHtml}</div><div style="display:flex;gap:5px;align-items:center;">${done ? `<span class="heat-chip chip-done">Done</span><button onclick="event.stopPropagation();editHeat('${safeHeat}')" style="height:22px;padding:0 8px;background:rgba(201,168,76,0.12);border:1px solid rgba(201,168,76,0.4);border-radius:20px;font-family:inherit;font-size:10px;font-weight:700;color:#7a5a10;cursor:pointer;" title="Edit results">✏️</button>` : `<span class="heat-chip chip-start">Start</span>`}</div></div></div></div>`;
       }).join('')}
     </div>`).join('');
 }
@@ -1401,7 +1459,52 @@ function renderResults(){
 // ════════════════════════════════════════════
 // LOAD / SAVE HEAT (from first site + pushState)
 // ════════════════════════════════════════════
-function loadHeat(heat){currentHeat=heat;currentAthletes=athletes.filter(a=>a.heat===heat).sort((a,b)=>a.lane-b.lane);recordedFinishes=[];collapsedGroups={};const sec=document.getElementById('timer-section');sec.classList.remove('hidden');document.getElementById('heat-title').textContent=heat;document.getElementById('tap-count').textContent='0';renderAthletesList();renderFinishesList();updateAssignedCount();resetTimer();pushState();setTimeout(()=>sec.scrollIntoView({behavior:'smooth',block:'start'}),80);}
+function loadHeat(heat){
+  currentHeat = heat;
+  currentAthletes = athletes.filter(a => a.heat === heat).sort((a,b) => a.lane - b.lane);
+  recordedFinishes = [];
+  collapsedGroups = {};
+
+  // Find other athletes in same event + gender + grade (different heat)
+  const current = currentAthletes[0] || {};
+  otherDivisionAthletes = athletes.filter(a => 
+    a.heat !== heat &&
+    a.event === current.event &&
+    a.gender === current.gender &&
+    a.grade === current.grade
+  ).sort((a,b) => a.name.localeCompare(b.name));
+
+  const sec = document.getElementById('timer-section');
+  sec.classList.remove('hidden');
+  document.getElementById('heat-title').textContent = heat;
+
+  const raceBadge = document.getElementById('race-number-badge');
+  const firstAth = currentAthletes[0];
+  if (raceBadge && firstAth && firstAth.raceNumber) {
+    raceBadge.textContent = `Race #${firstAth.raceNumber}`;
+    raceBadge.style.display = 'inline-block';
+  } else if (raceBadge) {
+    raceBadge.style.display = 'none';
+  }
+
+  document.getElementById('tap-count').textContent = '0';
+  renderAthletesList();
+  renderFinishesList();
+  updateAssignedCount();
+  resetTimer();
+  pushState();
+
+  // Initialize quick gun sensitivity slider
+  const quickSlider = document.getElementById('gun-sens-quick');
+  const quickVal = document.getElementById('gun-sens-quick-val');
+  if (quickSlider && quickVal) {
+    const sens = settings.gunSensitivity || 0.28;
+    quickSlider.value = sens;
+    quickVal.textContent = sens.toFixed(2);
+  }
+
+  setTimeout(() => sec.scrollIntoView({behavior:'smooth', block:'start'}), 80);
+}
 
 let pendingEditHeat = null;
 
@@ -1501,7 +1604,8 @@ function handleCSVUpload(e){
   const file=e.target.files[0];if(!file)return;
   const reader=new FileReader();
   reader.onload=ev=>{
-    const parsed=parseCSV(ev.target.result);if(!parsed.length){showToast('⚠️','No valid rows found in CSV');return;}
+    let parsed=parseCSV(ev.target.result);if(!parsed.length){showToast('⚠️','No valid rows found in CSV');return;}
+    parsed = assignRaceNumbers(parsed);
     athletes=athletes.concat(parsed);saveToStorage();renderAthletesTable();renderHeatsGrid();pushState();showToast('✓',`Imported ${parsed.length} athletes`);
   };
   reader.readAsText(file);e.target.value='';
@@ -1518,12 +1622,22 @@ function parseCSV(text){
     const grade     = row.grade||row['grade level']||row.gr||'';
     const gender    = row.gender||row.sex||'';
     const raceGroup = row.race_group||row.racegroup||row['race group']||row.group||'';
+    // More robust race number matching
+    let raceNum = null;
+    for (const key in row) {
+      if (key.includes('race') && (key.includes('num') || key.includes('#') || key === 'race')) {
+        const val = parseInt(row[key]);
+        if (!isNaN(val) && val > 0) {
+          raceNum = val;
+          break;
+        }
+      }
+    }
     const lane      = parseInt(row.lane||row.ln||'99')||99;
     const name      = row.name||row.athlete||row['athlete name']||'';
     if(!name) return null;
     const school = row.school||row.team||row.club||'Unattached';
-    const genderDisplay = gender ? gender.charAt(0).toUpperCase()+gender.slice(1).toLowerCase() : '';
-    const gradeDisplay  = grade  ? `Grade ${grade}` : '';
+    // Clean heat label: "100M — Heat 1 — 6G"
     let heatLabel;
     if (raceGroup) {
       heatLabel = raceGroup;
@@ -1531,10 +1645,10 @@ function parseCSV(text){
       heatLabel = event || 'Event';
       if (event && heatNum) heatLabel = `${event} — Heat ${heatNum}`;
       else if (heatNum)     heatLabel = `Heat ${heatNum}`;
-      const parts = [];
-      if (genderDisplay) parts.push(genderDisplay);
-      if (gradeDisplay)  parts.push(gradeDisplay);
-      if (parts.length)  heatLabel += ` — ${parts.join(' ')}`;
+      const g = gender ? gender.charAt(0).toUpperCase() : '';
+      const gr = grade ? grade : '';
+      const cleanDiv = (g || gr) ? ` — ${gr}${g}` : '';
+      heatLabel += cleanDiv;
     }
     return {
       id:        `csv-${Date.now().toString(36)}-${i}`,
@@ -1544,8 +1658,9 @@ function parseCSV(text){
       team:      school,
       event:     event || heatLabel,
       grade,
-      gender:    genderDisplay,
+      gender:    gender ? gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase() : '',
       raceGroup: raceGroup || null,
+      raceNumber: raceNum,             // NEW: Race number for start line
     };
   }).filter(Boolean);
 }
@@ -1573,11 +1688,48 @@ function updateGunSensitivity(){
   const val = parseFloat(document.getElementById('gun-sens').value);
   settings.gunSensitivity = val;
   document.getElementById('gun-sens-val').textContent = val.toFixed(2);
+  // Also update quick slider if present
+  const quick = document.getElementById('gun-sens-quick');
+  const quickVal = document.getElementById('gun-sens-quick-val');
+  if(quick) quick.value = val;
+  if(quickVal) quickVal.textContent = val.toFixed(2);
+  saveToStorage();
+}
+
+function updateGunSensitivityQuick(val) {
+  const num = parseFloat(val);
+  settings.gunSensitivity = num;
+  // Update settings modal slider if open
+  const mainSlider = document.getElementById('gun-sens');
+  const mainVal = document.getElementById('gun-sens-val');
+  if(mainSlider) mainSlider.value = num;
+  if(mainVal) mainVal.textContent = num.toFixed(2);
+  // Update quick display
+  const quickVal = document.getElementById('gun-sens-quick-val');
+  if(quickVal) quickVal.textContent = num.toFixed(2);
   saveToStorage();
 }
 function showWalkOnModal(){if(!currentHeat)return;document.getElementById('walkon-heat-label').textContent=`Adding to: ${currentHeat}`;['wo-name','wo-lane','wo-team','wo-grade'].forEach(id=>document.getElementById(id).value='');document.getElementById('walkon-modal').classList.add('open');setTimeout(()=>document.getElementById('wo-name').focus(),120);}
 function hideWalkOnModal(){document.getElementById('walkon-modal').classList.remove('open');}
 function addWalkOn(){const name=document.getElementById('wo-name').value.trim();if(!name){document.getElementById('wo-name').focus();return;}const lane=parseInt(document.getElementById('wo-lane').value)||99;const team=document.getElementById('wo-team').value.trim()||'Unattached';const grade=document.getElementById('wo-grade').value.trim()||'';const gender=currentHeat.includes('Boys')?'Boys':currentHeat.includes('Girls')?'Girls':'';const newAth={id:'wo-'+Date.now().toString(36),heat:currentHeat,lane,name,team,grade,gender,walkOn:true};athletes.push(newAth);currentAthletes.push(newAth);currentAthletes.sort((a,b)=>a.lane-b.lane);saveToStorage();renderAthletesTable();renderHeatsGrid();renderAthletesList();updateAssignedCount();hideWalkOnModal();pushState();showToast('🏃',`${name} added as walk-on`);}
+
+function addAthleteToCurrentHeat(athleteId) {
+  const ath = athletes.find(a => a.id === athleteId);
+  if (!ath || !currentHeat) return;
+
+  // Change their heat to current one
+  ath.heat = currentHeat;
+  currentAthletes.push(ath);
+  currentAthletes.sort((a,b) => a.lane - b.lane);
+
+  // Remove from otherDivisionAthletes
+  otherDivisionAthletes = otherDivisionAthletes.filter(a => a.id !== athleteId);
+
+  saveToStorage();
+  renderAthletesList();
+  renderHeatsGrid();
+  showToast('✓', `${ath.name} moved to this heat`);
+}
 
 function showToast(icon,msg){const t=document.createElement('div');t.className='toast';t.innerHTML=`<span style="font-size:16px;">${icon}</span><span>${msg}</span>`;document.body.appendChild(t);setTimeout(()=>{t.classList.add('out');setTimeout(()=>t.remove(),320);},2200);}
 
@@ -1585,6 +1737,12 @@ document.addEventListener('keydown',e=>{if(['INPUT','SELECT','TEXTAREA'].include
 
 function loginUser(){const pass=document.getElementById('login-pass').value.trim();const correctPass=localStorage.getItem('tt_passcode')||'track2026';if(pass===correctPass){localStorage.setItem('tt_logged_in','true');document.getElementById('login-screen').style.display='none';showToast('✓','Welcome back!');}else{const input=document.getElementById('login-pass');input.style.borderColor='#c0392b';input.value='';setTimeout(()=>input.style.borderColor='rgba(201,168,76,0.3)',800);showToast('⚠️','Incorrect passcode');}}
 function setupPasscode(){const newPass=prompt('Set your passcode (min 4 characters):');if(newPass&&newPass.length>=4){localStorage.setItem('tt_passcode',newPass);localStorage.setItem('tt_logged_in','true');document.getElementById('login-screen').style.display='none';showToast('✓','Passcode set!');}else{alert('Passcode must be at least 4 characters.');}}
+
+// Full manual control — only uses what you put in the CSV "Race Number" column.
+// No auto-assignment at all.
+function assignRaceNumbers(athleteList) {
+  return athleteList;
+}
 
 function loadSampleData() {
   athletes = [
